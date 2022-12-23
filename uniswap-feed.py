@@ -24,34 +24,39 @@ if 'streamed_data' not in st.session_state:
     st.session_state['streamed_data'] = []
 if 'highest_processed_block' not in st.session_state:
     st.session_state['highest_processed_block'] = 0    
+if 'attempt_failures' not in st.session_state:
+    st.session_state['attempt_failures'] = 0
+if 'error_message' not in st.session_state:
+    st.session_state['error_message'] = None
+
 
 # get eth chain head block from etherscan
 if 'min_block' not in st.session_state:
     block_req_url = "https://api.etherscan.io/api?module=block&action=getblocknobytime&timestamp=" + str(math.ceil(time.time())) + "&closest=before&apikey=855E3F6RGATSRCBU3PSV2BW7G9UBPFQZKB"
     resp = requests.get(block_req_url)
-    block_to_set = 16000000
-    if resp.status_code == 200:
-        if math.isnan(int(resp.json()["result"])) is False:
-            block_to_set = int(resp.json()["result"])
-    else:
-        print('Request Error: {}: invalid token name'.format(resp.status_code))
+    block_to_set = 10000835
+    # if resp.status_code == 200:
+    #     if math.isnan(int(resp.json()["result"])) is False:
+    #         block_to_set = int(resp.json()["result"])-100
+    # else:
+    #     print('Request Error: {}: invalid token name'.format(resp.status_code))
     st.session_state['min_block'] = block_to_set
     
 
 min_block = st.session_state['min_block']
-print(min_block, 'minnnn')
 max_block = 20000000
 
 if 'streamed_data' in st.session_state:
     if len(st.session_state['streamed_data']) > 0:
         copy_df = pd.DataFrame(st.session_state['streamed_data'])
-        print(copy_df, st.session_state['streamed_data'])
+        print(copy_df)
         if list(copy_df.columns):
             st.selectbox("Select Substream Table Sort Column", options=list(copy_df.columns), key="rank_col") 
 
         if st.session_state['rank_col'] is not None:
             copy_df = copy_df.sort_values(by=st.session_state['rank_col'],ascending=False)
             copy_df.index = range(1, len(copy_df) + 1)
+            copy_df['txHash'] = '0x' + copy_df['txHash'].astype(str)
         html_table = '<div class="table-container">' + copy_df[:500].to_html() + '</div>'
         style_css = """
                 <style>
@@ -89,14 +94,15 @@ if 'streamed_data' in st.session_state:
 if sb is not None:
     init_block = sb.output_modules["store_swap_events"]["initial_block"]
     total_blocks = st.session_state['min_block'] - init_block
-    remaining_blocks = st.session_state['min_block'] - st.session_state['highest_processed_block']
-    st.write('Estimated progress: ' + str(math.ceil(100*remaining_blocks/total_blocks)) + '% ' + str(st.session_state['highest_processed_block']) + '/' + str(st.session_state['min_block']))
+    blocks_processed = st.session_state['highest_processed_block'] - init_block
+    if init_block > 0 and total_blocks > 0 and blocks_processed > 0:
+        st.write('Estimated progress: ' + str(math.ceil(100*blocks_processed/total_blocks)) + '% ' + 'Initial Block: ' + str(init_block) + ' Highest Processed Block: ' + str(st.session_state['highest_processed_block']) + ' Start Block: ' + str(st.session_state['min_block']))
 
-
+if st.session_state['error_message'] is not None:
+    st.write("ERROR:" + st.session_state['error_message'])
 
 if "min_block" in st.session_state:
     min_block = st.session_state["min_block"]
-    print(max_block, type(max_block), min_block, type(min_block), 'running substream')
     if min_block > 0:
         if max_block < min_block:
             max_block = 20000000
@@ -104,15 +110,28 @@ if "min_block" in st.session_state:
             st.session_state["min_block"] = 0
         if max_block > min_block and sb is not None:
             module_name = "store_swap_events"
-            rec = sb.poll_return_first_dict([module_name], start_block=min_block, end_block=max_block, highest_processed_block=st.session_state['highest_processed_block'])
-            print(str(rec), 'rec', type((rec)))
-            if "block" in rec:
-                st.session_state['highest_processed_block'] = rec["block"]
+            poll_return_obj = {}
+            try:
+                poll_return_obj = sb.poll_return_first_dict([module_name], start_block=min_block, end_block=max_block, highest_processed_block=st.session_state['highest_processed_block'], return_progress=True)
+                if 'error' in poll_return_obj:
+                    raise TypeError(poll_return_obj["error"].debug_error_string())
+            except Exception as e:
+                print("ERROR --- TRY AGAIN ", e)
+                attempt_failures = st.session_state['attempt_failures']
+                attempt_failures += 1
+                if attempt_failures % 10 == 0:
+                    st.session_state["min_block"] = max_block
+                    st.session_state['error_message'] = "Maximum attempts reached. Substream returned RST error " + str(attempt_failures) + " times." 
+                else:
+                    st.session_state["min_block"] = min_block - 10000
+                st.session_state['attempt_failures'] = attempt_failures
+            print(poll_return_obj, 'poll_return_obj', type((poll_return_obj)))
+            if "block" in poll_return_obj:
+                st.session_state['highest_processed_block'] = poll_return_obj["block"]
                 
-            elif "data" in rec:
-                if (len(rec["data"]) > 0):
-                    st.session_state['streamed_data'].extend(rec["data"])
-                
-                st.session_state['min_block'] = int(rec["min_block"]) + 1
+            elif "data" in poll_return_obj:
+                if (len(poll_return_obj["data"]) > 0):
+                    st.session_state['streamed_data'].extend(poll_return_obj["data"])
+                st.session_state['min_block'] = int(poll_return_obj["data_block"]) + 1
             print(st.session_state, "state")
             st.experimental_rerun()
