@@ -20,21 +20,31 @@ sb_keys = []
 
 sb = Substream('./substreams-uniswap-v2-v0.1.1.spkg')
 
-if 'streamed_data' not in st.session_state:
+if bool(st.session_state) is False:
     st.session_state['streamed_data'] = []
-if 'highest_processed_block' not in st.session_state:
+    st.session_state['retruned_block_numbers'] = []
     st.session_state['highest_processed_block'] = 0    
-if 'attempt_failures' not in st.session_state:
     st.session_state['attempt_failures'] = 0
-if 'error_message' not in st.session_state:
     st.session_state['error_message'] = None
+    st.session_state['block_to_start'] = 10000835
+    st.session_state['has_started'] = False
+    st.experimental_rerun()
 
+st.number_input('START BLOCK:', min_value=10000835, max_value=20000001, key='block_to_start')
+if st.button('Start Execution'):
+    st.session_state['has_started'] = True
+
+if st.session_state['has_started'] is False:
+    st.stop()
+elif len(st.session_state['streamed_data']) == 0:
+    st.write('Streaming in progress, data should return shortly...')
 
 # get eth chain head block from etherscan
 if 'min_block' not in st.session_state:
-    block_req_url = "https://api.etherscan.io/api?module=block&action=getblocknobytime&timestamp=" + str(math.ceil(time.time())) + "&closest=before&apikey=855E3F6RGATSRCBU3PSV2BW7G9UBPFQZKB"
-    resp = requests.get(block_req_url)
-    block_to_set = 10000835
+    # While in development, no need to use chain head. Temporarily commenting out
+    # block_req_url = "https://api.etherscan.io/api?module=block&action=getblocknobytime&timestamp=" + str(math.ceil(time.time())) + "&closest=before&apikey=855E3F6RGATSRCBU3PSV2BW7G9UBPFQZKB"
+    # resp = requests.get(block_req_url)
+    block_to_set = st.session_state['block_to_start']
     # if resp.status_code == 200:
     #     if math.isnan(int(resp.json()["result"])) is False:
     #         block_to_set = int(resp.json()["result"])-100
@@ -49,7 +59,6 @@ max_block = 20000000
 if 'streamed_data' in st.session_state:
     if len(st.session_state['streamed_data']) > 0:
         copy_df = pd.DataFrame(st.session_state['streamed_data'])
-        print(copy_df)
         if list(copy_df.columns):
             st.selectbox("Select Substream Table Sort Column", options=list(copy_df.columns), key="rank_col") 
 
@@ -57,6 +66,8 @@ if 'streamed_data' in st.session_state:
             copy_df = copy_df.sort_values(by=st.session_state['rank_col'],ascending=False)
             copy_df.index = range(1, len(copy_df) + 1)
             copy_df['txHash'] = '0x' + copy_df['txHash'].astype(str)
+            copy_df['poolAddress'] = '0x' + copy_df['poolAddress'].astype(str)
+            copy_df['sender'] = '0x' + copy_df['sender'].astype(str)
         html_table = '<div class="table-container">' + copy_df[:500].to_html() + '</div>'
         style_css = """
                 <style>
@@ -112,9 +123,9 @@ if "min_block" in st.session_state:
             module_name = "store_swap_events"
             poll_return_obj = {}
             try:
-                poll_return_obj = sb.poll_return_first_dict([module_name], start_block=min_block, end_block=max_block, highest_processed_block=st.session_state['highest_processed_block'], return_progress=True)
+                poll_return_obj = sb.poll([module_name], start_block=min_block, end_block=max_block, return_first_result=True, highest_processed_block=st.session_state['highest_processed_block'], return_progress=True)
                 if 'error' in poll_return_obj:
-                    raise TypeError(poll_return_obj["error"].debug_error_string())
+                    raise TypeError(poll_return_obj["error"].debug_error_string() + ' BLOCK: ' + poll_return_obj["data_block"])
             except Exception as e:
                 print("ERROR --- TRY AGAIN ", e)
                 attempt_failures = st.session_state['attempt_failures']
@@ -123,15 +134,15 @@ if "min_block" in st.session_state:
                     st.session_state["min_block"] = max_block
                     st.session_state['error_message'] = "Maximum attempts reached. Substream returned RST error " + str(attempt_failures) + " times." 
                 else:
-                    st.session_state["min_block"] = min_block - 10000
+                    st.session_state["min_block"] = min_block - 100
                 st.session_state['attempt_failures'] = attempt_failures
-            print(poll_return_obj, 'poll_return_obj', type((poll_return_obj)))
             if "block" in poll_return_obj:
                 st.session_state['highest_processed_block'] = poll_return_obj["block"]
-                
             elif "data" in poll_return_obj:
-                if (len(poll_return_obj["data"]) > 0):
+                if (len(poll_return_obj["data"]) > 0) and poll_return_obj["data_block"] not in st.session_state['retruned_block_numbers']:
                     st.session_state['streamed_data'].extend(poll_return_obj["data"])
+                    st.session_state['retruned_block_numbers'].append(poll_return_obj["data_block"])
+                if int(poll_return_obj["data_block"]) > st.session_state['highest_processed_block']:
+                    st.session_state['highest_processed_block'] = int(poll_return_obj["data_block"])
                 st.session_state['min_block'] = int(poll_return_obj["data_block"]) + 1
-            print(st.session_state, "state")
             st.experimental_rerun()
