@@ -31,6 +31,8 @@ st.set_page_config(layout='wide')
 sb = None
 sb_keys = []
 
+print(sftoken, 'TOKEN')
+
 sb = Substream('./substreams-uniswap-v2-v0.1.1.spkg', token=sftoken)
 
 if bool(st.session_state) is False:
