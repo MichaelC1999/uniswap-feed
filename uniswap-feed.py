@@ -11,20 +11,21 @@ import time
 import requests
 import math
 import types
-import subprocess
 
 from dotenv import load_dotenv
 load_dotenv()
 
 sftoken = None
 if "APIKEY" in os.environ:
-
     APIKEY = os.environ["APIKEY"]
-    key_substr = "'" + '{"api_key":"' + APIKEY + '"}' + "'"
-    cmd = "curl https://auth.streamingfast.io/v1/auth/issue -s --data-binary " + key_substr + " | jq -r .token"
-    process_return = subprocess.run(cmd, shell=True, check=True, capture_output=True)
-    if process_return:
-        sftoken = process_return.stdout.decode().split('\n')[0]
+    headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+    }
+    data = '{"api_key": "' + APIKEY + '"}'
+    response = requests.post('https://auth.streamingfast.io/v1/auth/issue', headers=headers, data=data)
+    resp_json = response.json()
+    if "token" in resp_json:
+        sftoken = resp_json["token"]
 
 st.set_page_config(layout='wide')
 sb = None
