@@ -5,20 +5,32 @@ import streamlit as st
 from tempfile import NamedTemporaryFile
 import pandas as pd
 import substreams as sub
+import os
 import threading
 import time
 import requests
 import math
 import types
+import subprocess
 
+from dotenv import load_dotenv
+load_dotenv()
 
+sftoken = None
+if "APIKEY" in os.environ:
 
+    APIKEY = os.environ["APIKEY"]
+    key_substr = "'" + '{"api_key":"' + APIKEY + '"}' + "'"
+    cmd = "curl https://auth.streamingfast.io/v1/auth/issue -s --data-binary " + key_substr + " | jq -r .token"
+    process_return = subprocess.run(cmd, shell=True, check=True, capture_output=True)
+    if process_return:
+        sftoken = process_return.stdout.decode().split('\n')[0]
 
 st.set_page_config(layout='wide')
 sb = None
 sb_keys = []
 
-sb = Substream('./substreams-uniswap-v2-v0.1.1.spkg')
+sb = Substream('./substreams-uniswap-v2-v0.1.1.spkg', token=sftoken)
 
 if bool(st.session_state) is False:
     st.session_state['streamed_data'] = []
