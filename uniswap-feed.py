@@ -15,8 +15,43 @@ import types
 from dotenv import load_dotenv
 load_dotenv()
 
-sftoken = None
-if "APIKEY" in os.environ:
+
+st.set_page_config(layout='wide')
+sb = None
+sb_keys = []
+
+
+if bool(st.session_state) is False:
+    st.session_state['streamed_data'] = []
+    st.session_state['retruned_block_numbers'] = []
+    st.session_state['highest_processed_block'] = 0    
+    st.session_state['attempt_failures'] = 0
+    st.session_state['error_message'] = ""
+    st.session_state['has_started'] = False
+    st.session_state["sftoken"] = None
+    st.experimental_rerun()
+
+block_start = st.number_input('START BLOCK:', min_value=10000835, max_value=20000001)
+
+stop_message = st.empty()
+if 'has_started' in st.session_state:
+    if st.session_state['has_started'] is False:
+        execute_button = st.button('Start Execution')
+        if execute_button is True:
+            st.session_state["min_block"] = block_start
+            st.session_state['has_started'] = True
+            st.experimental_rerun()
+    if st.session_state['has_started'] is True:
+        execute_button = st.button('Stop Execution')
+        if execute_button is True:
+            stop_message.write('Stopping...')
+            st.session_state['has_started'] = False
+            st.experimental_rerun()
+
+
+if "SUBSTREAMS_API_TOKEN" in os.environ:
+    st.session_state["sftoken"] = os.environ["SUBSTREAMS_API_TOKEN"]
+elif "APIKEY" in os.environ and st.session_state["sftoken"] is None:
     APIKEY = os.environ["APIKEY"]
     headers = {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -25,51 +60,30 @@ if "APIKEY" in os.environ:
     response = requests.post('https://auth.streamingfast.io/v1/auth/issue', headers=headers, data=data)
     resp_json = response.json()
     if "token" in resp_json:
-        sftoken = resp_json["token"]
+        st.session_state["sftoken"] = resp_json["token"]
 
-st.set_page_config(layout='wide')
-sb = None
-sb_keys = []
-
-print(sftoken, 'TOKEN')
-
-sb = Substream('./substreams-uniswap-v2-v0.1.1.spkg', token=sftoken)
-
-if bool(st.session_state) is False:
-    st.session_state['streamed_data'] = []
-    st.session_state['retruned_block_numbers'] = []
-    st.session_state['highest_processed_block'] = 0    
-    st.session_state['attempt_failures'] = 0
-    st.session_state['error_message'] = None
-    st.session_state['block_to_start'] = 10000835
-    st.session_state['has_started'] = False
-    st.experimental_rerun()
-
-st.number_input('START BLOCK:', min_value=10000835, max_value=20000001, key='block_to_start')
-if st.button('Start Execution'):
-    st.session_state['has_started'] = True
-
-if st.session_state['has_started'] is False:
-    st.stop()
-elif len(st.session_state['streamed_data']) == 0:
-    st.write('Streaming in progress, data should return shortly...')
-
+sb = Substream('./substreams-uniswap-v2-v0.1.1.spkg', token=st.session_state["sftoken"])
 # get eth chain head block from etherscan
-if 'min_block' not in st.session_state:
+# if 'min_block' not in st.session_state and 'block_to_start' in st.session_state:
     # While in development, no need to use chain head. Temporarily commenting out
     # block_req_url = "https://api.etherscan.io/api?module=block&action=getblocknobytime&timestamp=" + str(math.ceil(time.time())) + "&closest=before&apikey=855E3F6RGATSRCBU3PSV2BW7G9UBPFQZKB"
     # resp = requests.get(block_req_url)
-    block_to_set = st.session_state['block_to_start']
+    # block_to_set = st.session_state['block_to_start']
+    
     # if resp.status_code == 200:
     #     if math.isnan(int(resp.json()["result"])) is False:
     #         block_to_set = int(resp.json()["result"])-100
     # else:
     #     print('Request Error: {}: invalid token name'.format(resp.status_code))
-    st.session_state['min_block'] = block_to_set
+    # st.session_state['min_block'] = block_to_set
     
-
-min_block = st.session_state['min_block']
+min_block = 10000835
+if 'min_block' in st.session_state:
+    min_block = st.session_state['min_block']
+    
 max_block = 20000000
+
+placeholder = st.empty()
 
 if 'streamed_data' in st.session_state:
     if len(st.session_state['streamed_data']) > 0:
@@ -117,47 +131,49 @@ if 'streamed_data' in st.session_state:
                 </style>"""
         st.markdown(style_css + html_table, unsafe_allow_html=True)
 
-if sb is not None:
-    init_block = sb.output_modules["store_swap_events"]["initial_block"]
-    total_blocks = st.session_state['min_block'] - init_block
-    blocks_processed = st.session_state['highest_processed_block'] - init_block
-    if init_block > 0 and total_blocks > 0 and blocks_processed > 0:
-        st.write('Estimated progress: ' + str(math.ceil(100*blocks_processed/total_blocks)) + '% ' + 'Initial Block: ' + str(init_block) + ' Highest Processed Block: ' + str(st.session_state['highest_processed_block']) + ' Start Block: ' + str(st.session_state['min_block']))
+error_message = st.empty()
 
-if st.session_state['error_message'] is not None:
-    st.write("ERROR:" + st.session_state['error_message'])
+if 'error_message' in st.session_state:
+    if st.session_state['error_message'] != "" and st.session_state['error_message'] is not None: 
+        error_message.text(st.session_state['error_message'])
 
-if "min_block" in st.session_state:
-    min_block = st.session_state["min_block"]
+if st.session_state['has_started'] is True:
+    st.session_state['error_message'] = ""
+    if 'min_block' in st.session_state:
+        # If min_block is saved in state, override the min_block from the UI input
+        min_block = st.session_state['min_block']
     if min_block > 0:
         if max_block < min_block:
-            max_block = 20000000
+            raise TypeError('`min_block` is greater than `max_block`. This cannot be validly polled.')
         if max_block == min_block:
             st.session_state["min_block"] = 0
+            st.session_state['has_started'] = False
+            st.experimental_rerun()
         if max_block > min_block and sb is not None:
-            module_name = "store_swap_events"
             poll_return_obj = {}
             try:
-                poll_return_obj = sb.poll([module_name], start_block=min_block, end_block=max_block, return_first_result=True, highest_processed_block=st.session_state['highest_processed_block'], return_progress=True)
+                placeholder.text("Loading Substream Results...")
+                poll_return_obj = sb.poll(["map_swap_events"], start_block=min_block, end_block=max_block, return_first_result=True)
+                placeholder.empty()
                 if 'error' in poll_return_obj:
-                    raise TypeError(poll_return_obj["error"].debug_error_string() + ' BLOCK: ' + poll_return_obj["data_block"])
-            except Exception as e:
-                print("ERROR --- TRY AGAIN ", e)
+                    if "debug_error_string" in dir(poll_return_obj["error"]):
+                        raise TypeError(poll_return_obj["error"].debug_error_string() + ' BLOCK: ' + poll_return_obj["data_block"])
+                    else:
+                        raise TypeError(str(poll_return_obj["error"]) + ' BLOCK: ' + poll_return_obj["data_block"])
+                elif "data" in poll_return_obj:
+                    if (len(poll_return_obj["data"]) > 0):
+                        st.session_state['streamed_data'].extend(poll_return_obj["data"])
+                    st.session_state['min_block'] = int(poll_return_obj["data_block"]) + 1
+            except Exception as err:
+                print("ERROR --- ", err)
                 attempt_failures = st.session_state['attempt_failures']
                 attempt_failures += 1
                 if attempt_failures % 10 == 0:
+                    st.session_state['error_message'] = "ERROR --- " + str(err)
+                    st.session_state['has_started'] = False
                     st.session_state["min_block"] = max_block
-                    st.session_state['error_message'] = "Maximum attempts reached. Substream returned RST error " + str(attempt_failures) + " times." 
-                else:
-                    st.session_state["min_block"] = min_block - 100
                 st.session_state['attempt_failures'] = attempt_failures
-            if "block" in poll_return_obj:
-                st.session_state['highest_processed_block'] = poll_return_obj["block"]
-            elif "data" in poll_return_obj:
-                if (len(poll_return_obj["data"]) > 0) and poll_return_obj["data_block"] not in st.session_state['retruned_block_numbers']:
-                    st.session_state['streamed_data'].extend(poll_return_obj["data"])
-                    st.session_state['retruned_block_numbers'].append(poll_return_obj["data_block"])
-                if int(poll_return_obj["data_block"]) > st.session_state['highest_processed_block']:
-                    st.session_state['highest_processed_block'] = int(poll_return_obj["data_block"])
-                st.session_state['min_block'] = int(poll_return_obj["data_block"]) + 1
             st.experimental_rerun()
+elif 'streamed_data' in st.session_state:
+    if len(st.session_state['streamed_data']) > 0:
+        st.write('Substream Polling Completed') 
