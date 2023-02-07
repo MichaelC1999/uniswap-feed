@@ -1,5 +1,4 @@
 from substreams import Substream
-from streamlit.runtime.scriptrunner.script_run_context import add_script_run_ctx, get_script_run_ctx
 from tempfile import NamedTemporaryFile
 from dotenv import load_dotenv
 import streamlit as st
@@ -128,7 +127,6 @@ if "streamed_data" in st.session_state:
         st.markdown(style_css + html_table, unsafe_allow_html=True)
 
 error_message = st.empty()
-
 if "error_message" in st.session_state:
     if st.session_state["error_message"] != "" and st.session_state["error_message"] is not None: 
         error_message.text(st.session_state["error_message"])
@@ -144,20 +142,21 @@ if st.session_state["has_started"] is True:
             st.session_state["has_started"] = False
             st.experimental_rerun()
         if sb is not None:
-            poll_return_obj = {}
+            poll_return = {}
             try:
                 loading_text.text("Loading Substream Results...")
-                poll_return_obj = sb.poll(["map_swap_events"], start_block=min_block, end_block=max_block, return_first_result=True)
+                poll_return = sb.poll("map_swap_events", start_block=min_block, end_block=max_block, return_first_result=True, return_type="dict")
                 loading_text.empty()
-                if "error" in poll_return_obj:
-                    if "debug_error_string" in dir(poll_return_obj["error"]):
-                        raise TypeError(poll_return_obj["error"].debug_error_string() + " BLOCK: " + poll_return_obj["data_block"])
-                    else:
-                        raise TypeError(str(poll_return_obj["error"]) + " BLOCK: " + poll_return_obj["data_block"])
-                elif "data" in poll_return_obj:
-                    if (len(poll_return_obj["data"]) > 0):
-                        st.session_state["streamed_data"].extend(poll_return_obj["data"])
-                    st.session_state["min_block"] = int(poll_return_obj["data_block"]) + 1
+                if "error" in poll_return:
+                    if poll_return["error"] is not None:
+                        if "debug_error_string" in dir(poll_return["error"]):
+                            raise TypeError(poll_return["error"].debug_error_string() + " BLOCK: " + str(poll_return["data_block"]))
+                        else:
+                            raise TypeError(str(poll_return["error"]) + " BLOCK: " + str(poll_return["data_block"]))
+                if "data" in poll_return:
+                    if (len(poll_return["data"]) > 0):
+                        st.session_state["streamed_data"].extend(poll_return["data"])
+                    st.session_state["min_block"] = int(poll_return["data_block"]) + 1
             except Exception as err:
                 print("ERROR --- ", err)
                 attempt_failures = st.session_state["attempt_failures"]
