@@ -50,12 +50,12 @@ min_block = 10000835
 if "min_block" not in st.session_state:
     # get eth chain head block from etherscan
     request_loading.write('Fetching Chain Head...')
-    block_req_url = "https://api.etherscan.io/api?module=block&action=getblocknobytime&timestamp=" + str(math.ceil(time.time())) + "&closest=before&apikey=855E3F6RGATSRCBU3PSV2BW7G9UBPFQZKB"
+    block_req_url = "https://api.etherscan.io/api?module=block&action=getblocknobytime&timestamp=" + str(math.ceil(time.time())-50) + "&closest=before&apikey=6YA1IHC4BN1V21Y6VJ23B3T52IA15Y6BAW"
     resp = requests.get(block_req_url)
     
     if resp.status_code == 200:
         if math.isnan(int(resp.json()["result"])) is False:
-            st.session_state["min_block"] = int(resp.json()["result"])
+            st.session_state["min_block"] = int(resp.json()["result"]) + 2
             st.session_state["has_started"] = True
             request_loading.empty()
             st.experimental_rerun()
