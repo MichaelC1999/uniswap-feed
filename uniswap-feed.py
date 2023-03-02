@@ -92,7 +92,7 @@ if "streamed_data" in st.session_state:
             copy_df["poolAddress"] = "0x" + copy_df["poolAddress"].astype(str)
             copy_df["sender"] = "0x" + copy_df["sender"].astype(str)
             copy_df["to"] = "0x" + copy_df["to"].astype(str)
-        html_table = '<div class="table-container">' + copy_df[:500].to_html() + "</div>"
+        html_table = '<div class="table-container">' + copy_df[:200].to_html() + "</div>"
         style_css = """
                 <style>
                     div.table-container {
@@ -155,7 +155,13 @@ if st.session_state["has_started"] is True:
                             raise TypeError(str(poll_return["error"]) + " BLOCK: " + str(poll_return["data_block"]))
                 if "data" in poll_return:
                     if (len(poll_return["data"]) > 0):
-                        st.session_state["streamed_data"].extend(poll_return["data"])
+                        copy_streamed_data = st.session_state['streamed_data']
+                        if st.session_state['streamed_data'] is not None:
+                            copy_streamed_data.extend(poll_return["data"])
+                            copy_streamed_data.reverse()
+                            copy_streamed_data = copy_streamed_data[0:200]
+                            copy_streamed_data.reverse()
+                        st.session_state['streamed_data'] = (copy_streamed_data)
                     st.session_state["min_block"] = int(poll_return["data_block"]) + 1
             except Exception as err:
                 print("ERROR --- ", err)
